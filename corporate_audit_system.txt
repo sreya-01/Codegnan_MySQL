@@ -1,0 +1,372 @@
+mysql> CREATE DATABASE IF NOT EXISTS corporate_audit_system;
+Query OK, 1 row affected (0.003 sec)
+
+mysql> USE corporate_audit_system;
+Database changed
+mysql> -- 1. DEPARTMENTS TABLE
+Query OK, 0 rows affected (0.001 sec)
+
+mysql> CREATE TABLE departments (
+    ->     id INT AUTO_INCREMENT PRIMARY KEY,
+    ->     name VARCHAR(100) NOT NULL UNIQUE,
+    ->     monthly_budget DECIMAL(15, 2) NOT NULL,
+    ->     current_spending DECIMAL(15, 2) DEFAULT 0.00
+    -> );
+Query OK, 0 rows affected (0.007 sec)
+
+mysql> -- 2. USERS TABLE
+Query OK, 0 rows affected (0.000 sec)
+
+mysql> CREATE TABLE users (
+    ->     id INT AUTO_INCREMENT PRIMARY KEY,
+    ->     email VARCHAR(255) NOT NULL UNIQUE,
+    ->     password_hash VARCHAR(255) NOT NULL,
+    ->     role ENUM('EMPLOYEE', 'MANAGER', 'AUDITOR', 'ADMIN') NOT NULL,
+    ->     department_id INT,
+    ->     is_active BOOLEAN DEFAULT TRUE,
+    ->     CONSTRAINT fk_user_department FOREIGN KEY (department_id) 
+    ->         REFERENCES departments(id) ON DELETE SET NULL
+    -> );
+Query OK, 0 rows affected (0.014 sec)
+
+mysql> -- 3. EXPENSE REPORTS (The Parent Document)
+Query OK, 0 rows affected (0.000 sec)
+
+mysql> CREATE TABLE expense_reports (
+    ->     id INT AUTO_INCREMENT PRIMARY KEY,
+    ->     title VARCHAR(150) NOT NULL,
+    ->     status ENUM('DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED', 'REIMBURSED') DEFAULT 'DRAFT',
+    ->     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    ->     employee_id INT NOT NULL,
+    ->     approver_id INT NULL,
+    ->     CONSTRAINT fk_report_employee FOREIGN KEY (employee_id) REFERENCES users(id),
+    ->     CONSTRAINT fk_report_approver FOREIGN KEY (approver_id) REFERENCES users(id)
+    -> );
+Query OK, 0 rows affected (0.017 sec)
+
+mysql> -- 4. EXPENSE ITEMS (The Line Items)
+Query OK, 0 rows affected (0.000 sec)
+
+mysql> CREATE TABLE expense_items (
+    ->     id INT AUTO_INCREMENT PRIMARY KEY,
+    ->     report_id INT NOT NULL,
+    ->     amount DECIMAL(13, 2) NOT NULL,
+    ->     category VARCHAR(100) NOT NULL, -- e.g., 'Travel', 'Software Licences', 'Client Dinner'
+    ->     item_date DATE NOT NULL,
+    ->     description TEXT,
+    ->     CONSTRAINT fk_item_report FOREIGN KEY (report_id) 
+    ->         REFERENCES expense_reports(id) ON DELETE CASCADE
+    -> );
+Query OK, 0 rows affected (0.014 sec)
+
+mysql> -- 5. IMMUTABLE SYSTEM AUDIT LOGS
+Query OK, 0 rows affected (0.000 sec)
+
+mysql> CREATE TABLE system_audit_trail (
+    ->     id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    ->     table_name VARCHAR(50) NOT NULL,
+    ->     action_type ENUM('INSERT', 'UPDATE', 'DELETE') NOT NULL,
+    ->     record_id INT NOT NULL,
+    ->     old_value JSON NULL,
+    ->     new_value JSON NULL,
+    ->     changed_by_user_id INT NULL,
+    ->     changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    ->     CONSTRAINT fk_audit_user FOREIGN KEY (changed_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+    -> ) ENGINE=InnoDB;
+Query OK, 0 rows affected (0.014 sec)
+
+mysql> -- Seed Departments
+Query OK, 0 rows affected (0.000 sec)
+
+mysql> INSERT INTO departments (name, monthly_budget) VALUES 
+    -> ('Engineering', 50000.00),
+    -> ('Marketing', 20000.00),
+    -> ('Sales', 30000.00),
+    -> ('Human Resources', 10000.00);
+Query OK, 4 rows affected (0.004 sec)
+Records: 4  Duplicates: 0  Warnings: 0
+
+mysql> -- Seed Users (Passwords are represented as mock hashes)
+Query OK, 0 rows affected (0.000 sec)
+
+mysql> INSERT INTO users (email, password_hash, role, department_id) VALUES
+    -> ('alice.admin@corp.com', 'hash_admin123', 'ADMIN', NULL),
+    -> ('bob.mgr@corp.com', 'hash_mgr123', 'MANAGER', 1),     -- Engineering Mgr
+    -> ('carol.mkt@corp.com', 'hash_mkt123', 'MANAGER', 2),    -- Marketing Mgr
+    -> ('david.emp@corp.com', 'hash_emp123', 'EMPLOYEE', 1),   -- Engineering Dev
+    -> ('eva.emp@corp.com', 'hash_emp456', 'EMPLOYEE', 1),     -- Engineering Dev
+    -> ('frank.sales@corp.com', 'hash_sales123', 'EMPLOYEE', 3),-- Sales Rep
+    -> ('grace.auditor@corp.com', 'hash_aud123', 'AUDITOR', NULL);
+Query OK, 7 rows affected (0.005 sec)
+Records: 7  Duplicates: 0  Warnings: 0
+
+mysql> -- Seed Expense Reports
+Query OK, 0 rows affected (0.000 sec)
+
+mysql> INSERT INTO expense_reports (title, status, employee_id, approver_id) VALUES
+    -> ('Q1 Cloud Server Hosting', 'APPROVED', 4, 2),
+    -> ('Team Building Offsite', 'SUBMITTED', 4, NULL),
+    -> ('SaaS Development Tools', 'REIMBURSED', 5, 2),
+    -> ('Ad Campaign Jan 2026', 'APPROVED', 6, 3),
+    -> ('Client Dinner - Travel Expenses', 'REJECTED', 6, 3),
+    -> ('Laptop Repair Dep', 'DRAFT', 5, NULL);
+Query OK, 6 rows affected (0.004 sec)
+Records: 6  Duplicates: 0  Warnings: 0
+
+mysql> -- Seed Expense Items
+Query OK, 0 rows affected (0.000 sec)
+
+mysql> INSERT INTO expense_items (report_id, amount, category, item_date, description) VALUES
+    -> (1, 12500.00, 'Software Licenses', '2026-01-15', 'AWS Production Cluster hosting fee'),
+    -> (1, 1200.50, 'Software Licenses', '2026-01-16', 'Database monitoring tools addon'),
+    -> (2, 2500.00, 'Travel', '2026-02-10', 'Hotel booking for Engineering retreat'),
+    -> (2, 850.00, 'Meals', '2026-02-11', 'Team dinner at conference'),
+    -> (3, 4500.00, 'Software Licenses', '2026-01-05', 'JetBrains & GitHub Copilot corporate annual seats'),
+    -> (4, 15000.00, 'Marketing', '2026-01-20', 'Google Ads spend for product launch'),
+    -> (5, 450.00, 'Meals', '2026-02-01', 'Steakhouse dinner with client X (No receipt attached)'),
+    -> (5, 120.00, 'Travel', '2026-02-01', 'Uber rides to hotel');
+Query OK, 8 rows affected (0.005 sec)
+Records: 8  Duplicates: 0  Warnings: 0
+
+mysql> -- EASY QUERIES
+Query OK, 0 rows affected (0.000 sec)
+
+mysql> --1. Get All Active Employees
+    -> ^C
+mysql> SELECT id, email, department_id 
+    -> FROM users 
+    -> WHERE role = 'EMPLOYEE' AND is_active = TRUE;
++----+----------------------+---------------+
+| id | email                | department_id |
++----+----------------------+---------------+
+|  4 | david.emp@corp.com   |             1 |
+|  5 | eva.emp@corp.com     |             1 |
+|  6 | frank.sales@corp.com |             3 |
++----+----------------------+---------------+
+3 rows in set (0.001 sec)
+
+mysql> -- 2. List reports requiring review
+Query OK, 0 rows affected (0.001 sec)
+
+mysql> SELECT id, title, employee_id, created_at 
+    -> FROM expense_reports 
+    -> WHERE status = 'SUBMITTED' AND approver_id IS NULL;
++----+-----------------------+-------------+---------------------+
+| id | title                 | employee_id | created_at          |
++----+-----------------------+-------------+---------------------+
+|  2 | Team Building Offsite |           4 | 2026-05-18 21:19:08 |
++----+-----------------------+-------------+---------------------+
+1 row in set (0.002 sec)
+
+mysql> -- 3 Find High-value line items
+Query OK, 0 rows affected (0.000 sec)
+
+mysql> SELECT id, report_id, amount, category, description 
+    -> FROM expense_items 
+    -> WHERE amount > 2500.00;
++----+-----------+----------+-------------------+---------------------------------------------------+
+| id | report_id | amount   | category          | description                                       |
++----+-----------+----------+-------------------+---------------------------------------------------+
+|  1 |         1 | 12500.00 | Software Licenses | AWS Production Cluster hosting fee                |
+|  5 |         3 |  4500.00 | Software Licenses | JetBrains & GitHub Copilot corporate annual seats |
+|  6 |         4 | 15000.00 | Marketing         | Google Ads spend for product launch               |
++----+-----------+----------+-------------------+---------------------------------------------------+
+3 rows in set (0.001 sec)
+
+mysql> -- 4. Search for Hardware-related entries
+Query OK, 0 rows affected (0.000 sec)
+
+mysql> SELECT * 
+    -> FROM expense_items 
+    -> WHERE description LIKE '%Laptop%' OR description LIKE '%Server%';
+Empty set (0.001 sec)
+
+mysql> -- MEDIUM LEVEL QUERIES
+Query OK, 0 rows affected (0.000 sec)
+
+mysql> -- 5. View total value of each expense report
+Query OK, 0 rows affected (0.000 sec)
+
+mysql> SELECT * 
+    -> FROM expense_items 
+    -> WHERE description LIKE '%Laptop%' OR description LIKE '%Server%';
+Empty set (0.001 sec)
+
+mysql> SELECT r.id AS report_id, r.title, COUNT(i.id) AS total_items, SUM(i.amount) AS total_report_cost
+    -> FROM expense_reports r
+    -> JOIN expense_items i ON r.id = i.report_id
+    -> GROUP BY r.id, r.title;
++-----------+---------------------------------+-------------+-------------------+
+| report_id | title                           | total_items | total_report_cost |
++-----------+---------------------------------+-------------+-------------------+
+|         1 | Q1 Cloud Server Hosting         |           2 |          13700.50 |
+|         2 | Team Building Offsite           |           2 |           3350.00 |
+|         3 | SaaS Development Tools          |           1 |           4500.00 |
+|         4 | Ad Campaign Jan 2026            |           1 |          15000.00 |
+|         5 | Client Dinner - Travel Expenses |           2 |            570.00 |
++-----------+---------------------------------+-------------+-------------------+
+5 rows in set (0.001 sec)
+
+mysql> -- 6. Display Expense Reports alongside submitting employee names
+Query OK, 0 rows affected (0.000 sec)
+
+mysql> SELECT er.id AS report_id, er.title, er.status, u.email AS employee_email
+    -> FROM expense_reports er
+    -> JOIN users u ON er.employee_id = u.id;
++-----------+---------------------------------+------------+----------------------+
+| report_id | title                           | status     | employee_email       |
++-----------+---------------------------------+------------+----------------------+
+|         1 | Q1 Cloud Server Hosting         | APPROVED   | david.emp@corp.com   |
+|         2 | Team Building Offsite           | SUBMITTED  | david.emp@corp.com   |
+|         3 | SaaS Development Tools          | REIMBURSED | eva.emp@corp.com     |
+|         4 | Ad Campaign Jan 2026            | APPROVED   | frank.sales@corp.com |
+|         5 | Client Dinner - Travel Expenses | REJECTED   | frank.sales@corp.com |
+|         6 | Laptop Repair Dep               | DRAFT      | eva.emp@corp.com     |
++-----------+---------------------------------+------------+----------------------+
+6 rows in set (0.001 sec)
+
+mysql> -- 7 Count submittes reports grouped by workflow status
+Query OK, 0 rows affected (0.000 sec)
+
+mysql> SELECT status, COUNT(*) AS total_count
+    -> FROM expense_reports
+    -> GROUP BY status;
++------------+-------------+
+| status     | total_count |
++------------+-------------+
+| APPROVED   |           2 |
+| SUBMITTED  |           1 |
+| REIMBURSED |           1 |
+| REJECTED   |           1 |
+| DRAFT      |           1 |
++------------+-------------+
+5 rows in set (0.001 sec)
+
+mysql> -- 8. Group total spending metrics across distinct expense catergories
+Query OK, 0 rows affected (0.000 sec)
+
+mysql> SELECT category, SUM(amount) AS total_spent, AVG(amount) AS average_item_cost
+    -> FROM expense_items
+    -> GROUP BY category
+    -> ORDER BY total_spent DESC;
++-------------------+-------------+-------------------+
+| category          | total_spent | average_item_cost |
++-------------------+-------------+-------------------+
+| Software Licenses |    18200.50 |       6066.833333 |
+| Marketing         |    15000.00 |      15000.000000 |
+| Travel            |     2620.00 |       1310.000000 |
+| Meals             |     1300.00 |        650.000000 |
++-------------------+-------------+-------------------+
+4 rows in set (0.001 sec)
+
+mysql> -- HARD QUERIES
+Query OK, 0 rows affected (0.000 sec)
+
+mysql> 9. Identity top speding spikes 
+    -> ^C
+mysql> SELECT id, report_id, amount, category, item_date
+    -> FROM expense_items
+    -> WHERE amount > (SELECT AVG(amount) FROM expense_items)
+    -> ORDER BY amount DESC;
++----+-----------+----------+-------------------+------------+
+| id | report_id | amount   | category          | item_date  |
++----+-----------+----------+-------------------+------------+
+|  6 |         4 | 15000.00 | Marketing         | 2026-01-20 |
+|  1 |         1 | 12500.00 | Software Licenses | 2026-01-15 |
++----+-----------+----------+-------------------+------------+
+2 rows in set (0.002 sec)
+
+mysql> 10. Comprehensive departmental budget breakdown
+    -> ^C
+mysql> SELECT 
+    ->     d.name AS department_name,
+    ->     d.monthly_budget AS assigned_limit,
+    ->     COALESCE(SUM(ei.amount), 0.00) AS real_approved_spend,
+    ->     (d.monthly_budget - COALESCE(SUM(ei.amount), 0.00)) AS remaining_cash_pool,
+    ->     ROUND((COALESCE(SUM(ei.amount), 0.00) / d.monthly_budget) * 100, 2) AS utilization_rate_percent
+    -> FROM departments d
+    -> LEFT JOIN users u ON d.id = u.department_id
+    -> LEFT JOIN expense_reports er ON u.id = er.employee_id AND er.status IN ('APPROVED', 'REIMBURSED')
+    -> LEFT JOIN expense_items ei ON er.id = ei.report_id
+    -> GROUP BY d.id, d.name, d.monthly_budget;
++-----------------+----------------+---------------------+---------------------+--------------------------+
+| department_name | assigned_limit | real_approved_spend | remaining_cash_pool | utilization_rate_percent |
++-----------------+----------------+---------------------+---------------------+--------------------------+
+| Engineering     |       50000.00 |            18200.50 |            31799.50 |                    36.40 |
+| Marketing       |       20000.00 |                0.00 |            20000.00 |                     0.00 |
+| Sales           |       30000.00 |            15000.00 |            15000.00 |                    50.00 |
+| Human Resources |       10000.00 |                0.00 |            10000.00 |                     0.00 |
++-----------------+----------------+---------------------+---------------------+--------------------------+
+4 rows in set (0.002 sec)
+
+mysql> -- 11. Identify compliance exceptions
+Query OK, 0 rows affected (0.000 sec)
+
+mysql> SELECT u.id AS employee_id, u.email, d.name AS department, MAX(ei.amount) AS single_largest_charge
+    -> FROM users u
+    -> JOIN departments d ON u.department_id = d.id
+    -> JOIN expense_reports er ON u.id = er.employee_id
+    -> JOIN expense_items ei ON er.id = ei.report_id
+    -> WHERE ei.amount > 10000.00 AND er.status NOT IN ('APPROVED', 'REIMBURSED')
+    -> GROUP BY u.id, u.email, d.name;
+Empty set (0.002 sec)
+
+mysql> -- 12. Find the top spender in each department
+Query OK, 0 rows affected (0.000 sec)
+
+mysql> SELECT 
+    ->     d.name AS department_name,
+    ->     u.email AS employee_email,
+    ->     SUM(ei.amount) AS total_user_approved_spend
+    -> FROM departments d
+    -> JOIN users u ON d.id = u.department_id
+    -> JOIN expense_reports er ON u.id = er.employee_id
+    -> JOIN expense_items ei ON er.id = ei.report_id
+    -> WHERE er.status IN ('APPROVED', 'REIMBURSED')
+    -> GROUP BY d.id, d.name, u.email
+    -> HAVING total_user_approved_spend = (
+    ->     -- Subquery: Find the absolute highest spending figure for that specific department
+    ->     SELECT MAX(department_total)
+    ->     FROM (
+    ->         SELECT u2.department_id, SUM(ei2.amount) AS department_total
+    ->         FROM users u2
+    ->         JOIN expense_reports er2 ON u2.id = er2.employee_id
+    ->         JOIN expense_items ei2 ON er2.id = ei2.report_id
+    ->         WHERE er2.status IN ('APPROVED', 'REIMBURSED')
+    ->         GROUP BY u2.id
+    ->     ) AS sub_spend
+    ->     WHERE sub_spend.department_id = d.id
+    -> );
++-----------------+----------------------+---------------------------+
+| department_name | employee_email       | total_user_approved_spend |
++-----------------+----------------------+---------------------------+
+| Engineering     | david.emp@corp.com   |                  13700.50 |
+| Sales           | frank.sales@corp.com |                  15000.00 |
++-----------------+----------------------+---------------------------+
+2 rows in set (0.002 sec)
+
+mysql> -- 13. Policy Compliance Check
+Query OK, 0 rows affected (0.001 sec)
+
+mysql> SELECT 
+    ->     er.id AS report_id,
+    ->     er.title AS report_title,
+    ->     er.status AS current_status,
+    ->     u.email AS employee_email,
+    ->     COUNT(ei.id) AS total_expensive_items,
+    ->     SUM(ei.amount) AS total_report_value
+    -> FROM expense_reports er
+    -> JOIN users u ON er.employee_id = u.id
+    -> JOIN expense_items ei ON er.id = ei.report_id
+    -> -- Focus only on items over $1500 in reports that are NOT yet finalized
+    -> WHERE ei.amount > 1500.00 AND er.status IN ('DRAFT', 'SUBMITTED')
+    -> GROUP BY er.id, er.title, er.status, u.email
+    -> ORDER BY total_report_value DESC;
++-----------+-----------------------+----------------+--------------------+-----------------------+--------------------+
+| report_id | report_title          | current_status | employee_email     | total_expensive_items | total_report_value |
++-----------+-----------------------+----------------+--------------------+-----------------------+--------------------+
+|         2 | Team Building Offsite | SUBMITTED      | david.emp@corp.com |                     1 |            2500.00 |
++-----------+-----------------------+----------------+--------------------+-----------------------+--------------------+
+1 row in set (0.002 sec)
+
+mysql> notee
